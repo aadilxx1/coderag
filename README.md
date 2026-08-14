@@ -19,6 +19,8 @@ guardrails, and CI.
   crash the whole thing).
 
 ### Step 2: Storage (Postgres + pgvector) — in progress
+- Postgres running via `docker-compose.yml` using the `pgvector/pgvector:pg16` image
+- Confirmed Python can connect via `psycopg`
 
 ### Upcoming
 - Embeddings
