@@ -16,7 +16,7 @@ If the provided code doesn't actually answer the question, say so honestly inste
 Be concise and specific -- reference actual function/file names from the context."""
 
 
-def _build_context(chunks: list[RetrievedChunk]) -> str:
+def build_context(chunks: list[RetrievedChunk]) -> str:
     parts = []
     for c in chunks:
         parts.append(
@@ -32,7 +32,7 @@ def answer(question: str, repo: str | None = None, top_k: int = 5) -> str:
     if not chunks:
         return "No relevant code found for this question."
 
-    context = _build_context(chunks)
+    context = build_context(chunks)
     prompt = f"{SYSTEM_PROMPT}\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
 
     llm = ChatOllama(model=MODEL_NAME, temperature=0)
