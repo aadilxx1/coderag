@@ -1,0 +1,9 @@
+sqlalchemy==2.0.30
+psycopg[binary]==3.3.4
+sentence-transformers==5.0.0
+langchain-ollama==1.1.0
+langgraph==1.0.1
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.12.3
+pytest==7.4.4
