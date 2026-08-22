@@ -34,6 +34,15 @@ def ingest_repo(repo_root: Path, repo_name: str) -> int:
 
     engine = get_engine()
     with engine.begin() as conn:
+        # Re-ingesting a repo replaces its chunks entirely, so re-running this
+        # script always reflects the repo's current state -- no duplicates,
+        # no leftover rows for files that were deleted or renamed.
+        deleted = conn.execute(
+            text("DELETE FROM code_chunks WHERE repo = :repo"), {"repo": repo_name}
+        )
+        if deleted.rowcount:
+            print(f"Removed {deleted.rowcount} existing rows for repo '{repo_name}'")
+
         for chunk, vector in zip(chunks, vectors):
             conn.execute(
                 text("""

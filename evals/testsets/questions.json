@@ -1,0 +1,12 @@
+[
+  {"question": "What does the AST chunker do?"},
+  {"question": "How does the chunker decide where to split a file?"},
+  {"question": "What embedding model is used and why?"},
+  {"question": "How does retrieval find similar code chunks in Postgres?"},
+  {"question": "What does the generate step do with the retrieved chunks?"},
+  {"question": "How is the retrieve-generate flow structured as a LangGraph?"},
+  {"question": "What input guardrail checks are run before retrieval?"},
+  {"question": "How is groundedness checked on a generated answer?"},
+  {"question": "What does the /ask FastAPI endpoint do?"},
+  {"question": "What is the capital of France?"}
+]

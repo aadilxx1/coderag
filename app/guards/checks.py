@@ -52,13 +52,14 @@ _WORD_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]{2,}")
 MIN_GROUNDEDNESS_OVERLAP = 0.15
 
 
-def check_groundedness(answer: str, chunks: list[RetrievedChunk]) -> str | None:
-    """Heuristic: what fraction of the answer's distinct words also appear in
-    the retrieved context. A paraphrased-but-grounded answer still shares
-    plenty of vocabulary (symbol names, code terms) with its source chunks;
-    an ungrounded/hallucinated one usually doesn't."""
+def groundedness_overlap(answer: str, chunks: list[RetrievedChunk]) -> float:
+    """What fraction of the answer's distinct words also appear in the
+    retrieved context. A paraphrased-but-grounded answer still shares plenty
+    of vocabulary (symbol names, code terms) with its source chunks; an
+    ungrounded/hallucinated one usually doesn't. Returns 1.0 when there's
+    nothing to compare against (no chunks, or no words in the answer)."""
     if not chunks:
-        return None
+        return 1.0
 
     context_text = " ".join(
         f"{c.symbol} {c.file_path} {c.docstring or ''} {c.code}" for c in chunks
@@ -67,9 +68,12 @@ def check_groundedness(answer: str, chunks: list[RetrievedChunk]) -> str | None:
     answer_words = set(_WORD_RE.findall(answer.lower()))
 
     if not answer_words:
-        return None
+        return 1.0
 
-    overlap = len(answer_words & context_words) / len(answer_words)
-    if overlap < MIN_GROUNDEDNESS_OVERLAP:
+    return len(answer_words & context_words) / len(answer_words)
+
+
+def check_groundedness(answer: str, chunks: list[RetrievedChunk]) -> str | None:
+    if groundedness_overlap(answer, chunks) < MIN_GROUNDEDNESS_OVERLAP:
         return "Answer has little overlap with retrieved code -- possibly ungrounded."
     return None
