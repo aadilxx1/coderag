@@ -27,8 +27,15 @@ CREATE TABLE code_chunks (
     end_line     INT  NOT NULL,
     docstring    TEXT,
     code         TEXT NOT NULL,
-    embedding    vector({EMBEDDING_DIM})
+    embedding    vector({EMBEDDING_DIM}),
+    -- 'simple' config (no stemming/stopwords) since code identifiers aren't
+    -- natural language -- stemming "retrieve" to "retriev" buys nothing here.
+    search_vector tsvector GENERATED ALWAYS AS (
+        to_tsvector('simple', symbol || ' ' || coalesce(docstring, '') || ' ' || code)
+    ) STORED
 );
+
+CREATE INDEX code_chunks_search_idx ON code_chunks USING GIN (search_vector);
 """
 
 
