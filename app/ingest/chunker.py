@@ -46,6 +46,52 @@ def _node_source(source_lines: list[str], node: ast.AST) -> tuple[str, int, int]
     return "".join(source_lines[start - 1 : end]), start, end
 
 
+def _chunk_class(node: ast.ClassDef, lines: list[str], repo: str, rel: str,
+                  max_chars: int) -> list[CodeChunk]:
+    """One chunk per method, plus a class-level chunk (header + docstring +
+    method signatures, not full bodies). A single chunk for the whole class
+    truncates at max_chars for any class with more than a few methods,
+    silently making later methods unretrievable -- splitting per method
+    fixes that and matches the granularity we already give functions."""
+    methods = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+    chunks = [
+        CodeChunk(
+            repo=repo,
+            file_path=rel,
+            symbol=f"{node.name}.{method.name}",
+            kind="method",
+            start_line=method.lineno,
+            end_line=getattr(method, "end_lineno", method.lineno),
+            docstring=ast.get_docstring(method),
+            code=_node_source(lines, method)[0][:max_chars],
+        )
+        for method in methods
+    ]
+
+    class_end = getattr(node, "end_lineno", node.lineno)
+    header_end = methods[0].lineno - 1 if methods else class_end
+    header_code = "".join(lines[node.lineno - 1 : header_end])
+    signatures = "\n".join(
+        f"    def {m.name}({', '.join(a.arg for a in m.args.args)}): ..." for m in methods
+    )
+    class_code = f"{header_code}{signatures}" if signatures else header_code
+
+    chunks.append(
+        CodeChunk(
+            repo=repo,
+            file_path=rel,
+            symbol=node.name,
+            kind="class",
+            start_line=node.lineno,
+            end_line=class_end,
+            docstring=ast.get_docstring(node),
+            code=class_code[:max_chars],
+        )
+    )
+    return chunks
+
+
 def chunk_python_file(path: Path, repo_root: Path, repo: str,
                       max_chars: int = 4000) -> list[CodeChunk]:
     try:
@@ -59,15 +105,16 @@ def chunk_python_file(path: Path, repo_root: Path, repo: str,
     chunks: list[CodeChunk] = []
 
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(node, ast.ClassDef):
+            chunks.extend(_chunk_class(node, lines, repo, rel, max_chars))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             code, start, end = _node_source(lines, node)
-            kind = "class" if isinstance(node, ast.ClassDef) else "function"
             chunks.append(
                 CodeChunk(
                     repo=repo,
                     file_path=rel,
                     symbol=node.name,
-                    kind=kind,
+                    kind="function",
                     start_line=start,
                     end_line=end,
                     docstring=ast.get_docstring(node),
