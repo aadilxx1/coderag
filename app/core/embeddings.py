@@ -1,5 +1,5 @@
 """
-Local embeddings via sentence-transformers -- no API key, runs on your machine.
+Local embeddings via sentence-transformers -- runs on your machine.
 
 jina-embeddings-v2-base-code is trained specifically on code/docstring pairs
 and code-to-code similarity (unlike general sentence models), so it should
