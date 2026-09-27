@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 
 DB_URL = "postgresql+psycopg://coderag:coderag@localhost:5432/coderag"
-EMBEDDING_DIM = 768  # matches jina-embeddings-v2-base-code
+EMBEDDING_DIM = 768  #matches jina-embeddings-v2-base-code
 
 SCHEMA = f"""
 CREATE EXTENSION IF NOT EXISTS vector;
