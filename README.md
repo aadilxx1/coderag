@@ -86,6 +86,18 @@ guardrails, and CI.
   added after the first ingest were never re-ingested) and the chunking gap
   described in Step 1
 
+### Step 10: Ingest from GitHub ✅
+- `app/ingest/github.py` shallow-clones (`--depth 1`) a public repo into a
+  temp dir with the system `git`, which is deleted after ingest
+- Only `https://github.com/owner/repo` URLs (optionally `.git` or
+  `/tree/<branch>`) are accepted, and the clone URL is rebuilt from the
+  parsed parts so `file://`, local paths and other hosts can't be cloned
+- `POST /repos` (`url`, optional `name`/`ref`) and
+  `python scripts/ingest.py https://github.com/owner/repo [name]`; the repo
+  is stored as `owner/repo` by default
+- Ingest logic moved from the script into `app/ingest/pipeline.py`, so the
+  CLI and API share it
+
 ### Environment
 - Project dependencies are isolated in `.venv/` (pinned in `requirements.txt`)
   rather than the system/Anaconda Python — run scripts via `./.venv/bin/python`

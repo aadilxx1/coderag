@@ -20,6 +20,14 @@ from sentence_transformers import SentenceTransformer
 
 EMBEDDING_DIM = 768
 
+# The model accepts up to 8192 tokens, but attention memory grows with
+# seq_len^2 x batch_size -- a batch of long chunks OOMs the GPU (seen on an
+# M3: 3.3 GiB for one softmax). Chunks are capped at 4000 chars (~1000-1300
+# tokens of code), so 1024 tokens covers nearly all of each chunk; only the
+# embedding is truncated, the stored code is not.
+MAX_SEQ_LENGTH = 1024
+BATCH_SIZE = 8
+
 _model: SentenceTransformer | None = None
 
 
@@ -30,11 +38,12 @@ def _get_model() -> SentenceTransformer:
             "jinaai/jina-embeddings-v2-base-code",
             trust_remote_code=True,
         )
+        _model.max_seq_length = MAX_SEQ_LENGTH
     return _model
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    vectors = _get_model().encode(texts, convert_to_numpy=True)
+    vectors = _get_model().encode(texts, batch_size=BATCH_SIZE, convert_to_numpy=True)
     return vectors.tolist()
 
 

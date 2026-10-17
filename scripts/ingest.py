@@ -1,9 +1,9 @@
 """
-End-to-end ingest: walk a repo, chunk every .py file, embed each chunk,
-and store everything in Postgres.
+Ingest a repo from a local path or a public GitHub URL.
 
 Usage:
     python scripts/ingest.py /path/to/repo my-repo-name
+    python scripts/ingest.py https://github.com/owner/repo [repo-name]
 """
 from __future__ import annotations
 
@@ -12,67 +12,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import text
-
-from app.core.embeddings import embed_texts
-from app.core.store import get_engine
-from app.ingest.chunker import chunk_repo
-
-
-def ingest_repo(repo_root: Path, repo_name: str) -> int:
-    chunks = chunk_repo(repo_root, repo_name)
-    if not chunks:
-        print("No chunks found -- is the path correct and does it contain .py files?")
-        return 0
-
-    print(f"Chunked {len(chunks)} symbols from {repo_root}")
-
-    # Embed in one batch call -- much faster than one call per chunk.
-    texts_to_embed = [c.embed_text() for c in chunks]
-    print("Embedding chunks (this may take a moment)...")
-    vectors = embed_texts(texts_to_embed)
-
-    engine = get_engine()
-    with engine.begin() as conn:
-        # Re-ingesting a repo replaces its chunks entirely, so re-running this
-        # script always reflects the repo's current state -- no duplicates,
-        # no leftover rows for files that were deleted or renamed.
-        deleted = conn.execute(
-            text("DELETE FROM code_chunks WHERE repo = :repo"), {"repo": repo_name}
-        )
-        if deleted.rowcount:
-            print(f"Removed {deleted.rowcount} existing rows for repo '{repo_name}'")
-
-        for chunk, vector in zip(chunks, vectors):
-            conn.execute(
-                text("""
-                    INSERT INTO code_chunks
-                        (repo, file_path, symbol, kind, start_line, end_line, docstring, code, embedding)
-                    VALUES
-                        (:repo, :file_path, :symbol, :kind, :start_line, :end_line, :docstring, :code, :embedding)
-                """),
-                {
-                    "repo": chunk.repo,
-                    "file_path": chunk.file_path,
-                    "symbol": chunk.symbol,
-                    "kind": chunk.kind,
-                    "start_line": chunk.start_line,
-                    "end_line": chunk.end_line,
-                    "docstring": chunk.docstring,
-                    "code": chunk.code,
-                    "embedding": str(vector),  # pgvector accepts this text form via cast
-                },
-            )
-
-    print(f"Inserted {len(chunks)} rows into code_chunks")
-    return len(chunks)
+from app.ingest.pipeline import ingest_github, ingest_repo
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python scripts/ingest.py /path/to/repo repo-name")
+    args = sys.argv[1:]
+    if args and args[0].startswith("https://") and len(args) in (1, 2):
+        ingest_github(args[0], args[1] if len(args) == 2 else None)
+    elif len(args) == 2:
+        ingest_repo(Path(args[0]).resolve(), args[1])
+    else:
+        print(__doc__)
         sys.exit(1)
-
-    repo_path = Path(sys.argv[1]).resolve()
-    repo_name = sys.argv[2]
-    ingest_repo(repo_path, repo_name)
