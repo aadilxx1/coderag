@@ -95,3 +95,46 @@ def test_class_without_methods_stays_one_chunk(tmp_path: Path):
     assert len(class_chunks) == 1
     assert "x: int" in class_chunks[0].code
     assert "y: int" in class_chunks[0].code
+
+OVERLOADS = '''import typing as t
+from typing import overload
+
+
+@overload
+def coerce(x: int) -> int: ...
+@overload
+def coerce(x: str) -> str: ...
+def coerce(x):
+    return x
+
+
+class Box:
+    """Doc for Box."""
+
+    @t.overload
+    def __init__(self, v: int) -> None: ...
+    @t.overload
+    def __init__(self, v: str) -> None: ...
+    def __init__(self, v):
+        self.v = v
+'''
+
+
+def test_overload_stubs_are_skipped(tmp_path: Path):
+    f = tmp_path / "overloads.py"
+    f.write_text(OVERLOADS)
+    chunks = chunk_python_file(f, tmp_path, "test")
+
+    coerce = [c for c in chunks if c.symbol == "coerce"]
+    assert len(coerce) == 1 and "return x" in coerce[0].code
+
+    init = [c for c in chunks if c.symbol == "Box.__init__"]
+    assert len(init) == 1 and "self.v = v" in init[0].code
+
+
+def test_class_summary_excludes_overload_stubs(tmp_path: Path):
+    f = tmp_path / "overloads.py"
+    f.write_text(OVERLOADS)
+    summary = next(c for c in chunk_python_file(f, tmp_path, "test") if c.symbol == "Box")
+    assert "overload" not in summary.code
+    assert summary.code.count("def __init__") == 1

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 from sqlalchemy import text
 
@@ -22,6 +23,14 @@ from app.core.store import get_engine
 
 RRF_K = 60  # standard RRF smoothing constant
 CANDIDATE_POOL = 20  # candidates pulled from each search method before fusion
+
+# Test functions describe the behavior they test in the same words a
+# question uses ("test_class_methods_are_chunked_individually"), so they
+# often outrank the code that implements it. Their fused score is scaled
+# down unless the question is itself about tests. Tuned on the retrieval
+# eval (evals/run_retrieval_eval.py).
+TEST_PENALTY = 0.4
+_TEST_QUERY_RE = re.compile(r"\btest(s|ed|ing)?\b", re.IGNORECASE)
 
 _VECTOR_SQL = """
     SELECT id, file_path, symbol, kind, start_line, end_line, docstring, code,
@@ -66,6 +75,16 @@ def _keyword_tsquery(query: str) -> str | None:
     return " | ".join(terms)
 
 
+def _is_test_file(file_path: str) -> bool:
+    path = PurePosixPath(file_path)
+    return (
+        any(part in {"test", "tests"} for part in path.parts[:-1])
+        or path.name.startswith("test_")
+        or path.name.endswith("_test.py")
+        or path.name == "conftest.py"
+    )
+
+
 @dataclass
 class RetrievedChunk:
     file_path: str
@@ -107,6 +126,11 @@ def retrieve(query: str, repo: str | None = None, top_k: int = 5) -> list[Retrie
     for rank, row in enumerate(keyword_rows):
         scores[row.id] = scores.get(row.id, 0.0) + 1.0 / (RRF_K + rank + 1)
         rows_by_id.setdefault(row.id, row)
+
+    if not _TEST_QUERY_RE.search(query):
+        for i in scores:
+            if _is_test_file(rows_by_id[i].file_path):
+                scores[i] *= TEST_PENALTY
 
     ranked_ids = sorted(scores, key=lambda i: scores[i], reverse=True)[:top_k]
 

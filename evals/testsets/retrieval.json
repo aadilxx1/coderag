@@ -31,6 +31,8 @@
    "expected": ["app/ingest/pipeline.py::ingest_repo"]},
   {"repo": "coderag", "question": "How does the eval rate answer relevancy?",
    "expected": ["evals/run_eval.py::judge_relevancy"]},
+  {"repo": "coderag", "question": "Which test checks that a file with a syntax error doesn't crash ingest?",
+   "expected": ["tests/test_chunker.py::test_unparseable_file_is_skipped"]},
 
   {"repo": "pallets/itsdangerous", "question": "How does a signer verify a signature?",
    "expected": ["src/itsdangerous/signer.py::Signer.verify_signature"]},
@@ -61,5 +63,7 @@
   {"repo": "pallets/itsdangerous", "question": "What does want_bytes do with a str?",
    "expected": ["src/itsdangerous/encoding.py::want_bytes"]},
   {"repo": "pallets/itsdangerous", "question": "What error is raised when the payload can't be deserialized?",
-   "expected": ["src/itsdangerous/exc.py::BadPayload"]}
+   "expected": ["src/itsdangerous/exc.py::BadPayload"]},
+  {"repo": "pallets/itsdangerous", "question": "How is the max_age expiry of timestamp signatures tested?",
+   "expected": ["tests/test_itsdangerous/test_timed.py::TestTimestampSigner.test_max_age", "tests/test_itsdangerous/test_timed.py::TestTimedSerializer.test_max_age"]}
 ]

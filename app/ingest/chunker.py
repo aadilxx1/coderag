@@ -46,6 +46,18 @@ def _node_source(source_lines: list[str], node: ast.AST) -> tuple[str, int, int]
     return "".join(source_lines[start - 1 : end]), start, end
 
 
+def _is_overload(node: ast.AST) -> bool:
+    """True for a @typing.overload stub (`@overload` or `@t.overload`).
+    Stubs are signature-only (`...` body), and a function with N overloads
+    would otherwise become N+1 chunks with the same symbol -- near-identical
+    noise that crowds the real implementation out of the top-k."""
+    return any(
+        (isinstance(d, ast.Name) and d.id == "overload")
+        or (isinstance(d, ast.Attribute) and d.attr == "overload")
+        for d in getattr(node, "decorator_list", [])
+    )
+
+
 def _chunk_class(node: ast.ClassDef, lines: list[str], repo: str, rel: str,
                   max_chars: int) -> list[CodeChunk]:
     """One chunk per method, plus a class-level chunk (header + docstring +
@@ -53,7 +65,10 @@ def _chunk_class(node: ast.ClassDef, lines: list[str], repo: str, rel: str,
     truncates at max_chars for any class with more than a few methods,
     silently making later methods unretrievable -- splitting per method
     fixes that and matches the granularity we already give functions."""
-    methods = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    methods = [
+        n for n in node.body
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and not _is_overload(n)
+    ]
 
     chunks = [
         CodeChunk(
@@ -70,7 +85,13 @@ def _chunk_class(node: ast.ClassDef, lines: list[str], repo: str, rel: str,
     ]
 
     class_end = getattr(node, "end_lineno", node.lineno)
-    header_end = methods[0].lineno - 1 if methods else class_end
+    # The header ends where the first def starts -- including skipped
+    # overload stubs and decorators, which would otherwise leak into it.
+    all_defs = [n for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    header_end = (
+        min([all_defs[0].lineno] + [d.lineno for d in all_defs[0].decorator_list]) - 1
+        if all_defs else class_end
+    )
     header_code = "".join(lines[node.lineno - 1 : header_end])
     signatures = "\n".join(
         f"    def {m.name}({', '.join(a.arg for a in m.args.args)}): ..." for m in methods
@@ -107,7 +128,7 @@ def chunk_python_file(path: Path, repo_root: Path, repo: str,
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
             chunks.extend(_chunk_class(node, lines, repo, rel, max_chars))
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not _is_overload(node):
             code, start, end = _node_source(lines, node)
             chunks.append(
                 CodeChunk(

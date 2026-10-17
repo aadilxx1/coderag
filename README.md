@@ -111,6 +111,27 @@ guardrails, and CI.
   (the class summary or a sibling method outranks the expected method);
   test functions and duplicate `@overload` stub chunks also crowd results
 
+### Step 12: Retrieval noise fixes ✅
+Each change measured on the retrieval eval (33 questions -- 2 test-intent
+questions were added first, so down-ranking tests can't silently break them):
+
+| | hit@1 | hit@3 | hit@5 | hit@10 | MRR |
+|---|---|---|---|---|---|
+| baseline | 0.30 | 0.55 | 0.82 | 0.94 | 0.495 |
+| + skip `@overload` stubs | 0.33 | 0.58 | 0.76 | 0.94 | 0.515 |
+| + down-rank test files | 0.33 | 0.76 | 0.85 | 0.97 | **0.554** |
+
+- **Overload stubs** (`app/ingest/chunker.py`): `@overload` / `@t.overload`
+  signature-only stubs are no longer chunked -- a function with N overloads
+  was N+1 near-identical chunks (`Serializer.__init__` x6) crowding out real code
+- **Test down-ranking** (`app/core/retrieve.py`): chunks from test files get
+  their fused RRF score scaled by `TEST_PENALTY = 0.4`, unless the question
+  mentions tests. Test names restate behavior in the question's own words, so
+  they often outranked the implementation. Swept 1.0 -> 0.0; gains plateau at
+  0.4, and the test-intent questions kept their ranks at every value
+- hit@1 barely moved: the right chunk is now usually in the top 3 but behind
+  a closely related one (class summary, sibling method) -- the reranker's job
+
 ### Environment
 - Project dependencies are isolated in `.venv/` (pinned in `requirements.txt`)
   rather than the system/Anaconda Python — run scripts via `./.venv/bin/python`
