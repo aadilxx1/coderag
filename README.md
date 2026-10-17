@@ -98,6 +98,19 @@ guardrails, and CI.
 - Ingest logic moved from the script into `app/ingest/pipeline.py`, so the
   CLI and API share it
 
+### Step 11: Retrieval metrics ✅
+- `evals/run_retrieval_eval.py` scores retrieval alone -- no LLM, so it's
+  fast and deterministic, and a score change can only come from retrieval
+- Testset (`evals/testsets/retrieval.json`): 31 questions across `coderag`
+  and `pallets/itsdangerous`, each naming the chunk(s) that should come back
+  as `file_path::symbol`; the script first checks every expected chunk exists
+  in the DB, so a typo or stale index fails loudly instead of looking like a miss
+- Reports hit@1/3/5/10 and MRR, overall and per repo
+- Baseline (hybrid retrieval): hit@1 0.29, hit@5 0.81, MRR 0.484 overall --
+  coderag MRR 0.634, itsdangerous MRR 0.325. Most misses are near-misses
+  (the class summary or a sibling method outranks the expected method);
+  test functions and duplicate `@overload` stub chunks also crowd results
+
 ### Environment
 - Project dependencies are isolated in `.venv/` (pinned in `requirements.txt`)
   rather than the system/Anaconda Python — run scripts via `./.venv/bin/python`
