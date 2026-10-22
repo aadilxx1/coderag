@@ -32,6 +32,15 @@ CANDIDATE_POOL = 20  # candidates pulled from each search method before fusion
 TEST_PENALTY = 0.4
 _TEST_QUERY_RE = re.compile(r"\btest(s|ed|ing)?\b", re.IGNORECASE)
 
+# Docs (README sections) and the repo overview restate what the code does
+# in plain English, so they match questions well -- but code is better
+# grounding, and uncapped they took half the candidate slots on a repo with
+# a detailed README (coderag MRR 0.721 -> 0.619). At most DOC_CAP of them
+# keep their rank; any others go below all code chunks. Enough for "what
+# does this repo do" (README intro + overview), without crowding out code.
+DOC_CAP = 2
+DOC_KINDS = {"doc", "overview"}
+
 _VECTOR_SQL = """
     SELECT id, file_path, symbol, kind, start_line, end_line, docstring, code,
            embedding <=> :query_vector AS distance
@@ -132,7 +141,10 @@ def retrieve(query: str, repo: str | None = None, top_k: int = 5) -> list[Retrie
             if _is_test_file(rows_by_id[i].file_path):
                 scores[i] *= TEST_PENALTY
 
-    ranked_ids = sorted(scores, key=lambda i: scores[i], reverse=True)[:top_k]
+    ranked = sorted(scores, key=lambda i: scores[i], reverse=True)
+    doc_ids = [i for i in ranked if rows_by_id[i].kind in DOC_KINDS]
+    overflow = set(doc_ids[DOC_CAP:])
+    ranked_ids = ([i for i in ranked if i not in overflow] + doc_ids[DOC_CAP:])[:top_k]
 
     return [
         RetrievedChunk(

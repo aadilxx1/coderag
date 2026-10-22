@@ -1,7 +1,13 @@
 """Unit tests for the AST chunker."""
 from pathlib import Path
 
-from app.ingest.chunker import chunk_python_file
+from app.ingest.chunker import (
+    OVERVIEW_PATH,
+    build_overview_chunks,
+    chunk_markdown_file,
+    chunk_python_file,
+    iter_source_files,
+)
 
 SAMPLE = '''"""Module docstring."""
 import os
@@ -138,3 +144,81 @@ def test_class_summary_excludes_overload_stubs(tmp_path: Path):
     summary = next(c for c in chunk_python_file(f, tmp_path, "test") if c.symbol == "Box")
     assert "overload" not in summary.code
     assert summary.code.count("def __init__") == 1
+
+
+README = '''# MyProj
+
+A tool that does useful things.
+
+## Setup
+
+Run `make install`.
+
+```bash
+# not a heading -- inside a code fence
+make install
+```
+
+## Usage
+### CLI
+
+Use `myproj run`.
+'''
+
+
+def test_markdown_chunks_one_per_section_with_heading_path(tmp_path: Path):
+    f = tmp_path / "README.md"
+    f.write_text(README)
+    chunks = chunk_markdown_file(f, tmp_path, "test")
+    by_symbol = {c.symbol: c for c in chunks}
+
+    # "Usage" has no body of its own (straight into "### CLI"), so it's skipped.
+    assert list(by_symbol) == ["MyProj", "MyProj > Setup", "MyProj > Usage > CLI"]
+    assert all(c.kind == "doc" for c in chunks)
+    assert "make install" in by_symbol["MyProj > Setup"].code
+    assert "not a heading" in by_symbol["MyProj > Setup"].code  # fence kept in its section
+    assert by_symbol["MyProj"].start_line == 1
+
+
+def test_markdown_text_before_first_heading_is_intro(tmp_path: Path):
+    f = tmp_path / "notes.md"
+    f.write_text("Just some notes.\n\n# Later\n\nMore.\n")
+    assert [c.symbol for c in chunk_markdown_file(f, tmp_path, "test")] == ["<intro>", "Later"]
+
+
+def test_long_markdown_section_is_split_into_parts(tmp_path: Path):
+    f = tmp_path / "big.md"
+    f.write_text("# Big\n\n" + "".join(f"line {i} of filler text\n" for i in range(400)))
+    chunks = chunk_markdown_file(f, tmp_path, "test", max_chars=1000)
+    assert len(chunks) > 1
+    assert chunks[0].symbol == "Big (part 1)"
+    assert all(len(c.code) <= 1000 for c in chunks)
+    # Parts cover the file contiguously.
+    assert all(b.start_line == a.end_line + 1 for a, b in zip(chunks, chunks[1:]))
+
+
+def test_overview_lists_files_with_descriptions(tmp_path: Path):
+    (tmp_path / "README.md").write_text(README)
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "core.py").write_text('"""Core logic for MyProj.\n\nMore detail."""\n')
+    (tmp_path / "pkg" / "__init__.py").write_text("")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "ignored.py").write_text('"""Should not appear."""\n')
+
+    files = list(iter_source_files(tmp_path))
+    [overview] = build_overview_chunks(tmp_path, "test", files)
+    assert overview.file_path == OVERVIEW_PATH and overview.kind == "overview"
+    assert "README.md -- MyProj: A tool that does useful things." in overview.code
+    assert "pkg/core.py -- Core logic for MyProj." in overview.code
+    assert "pkg/__init__.py\n" in overview.code
+    assert "ignored" not in overview.code
+
+
+def test_hidden_and_tooling_dirs_are_skipped(tmp_path: Path):
+    for rel in ["keep.py", "docs/guide.md", ".pytest_cache/README.md", ".github/ISSUE.md",
+                ".venv/lib/x.py", "node_modules/pkg/y.py", ".hidden_root_file.py"]:
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x = 1\n")
+    found = {str(p.relative_to(tmp_path)) for p in iter_source_files(tmp_path)}
+    # Hidden *dirs* are skipped; a hidden file at the root is still a source file.
+    assert found == {"keep.py", "docs/guide.md", ".hidden_root_file.py"}

@@ -1,6 +1,7 @@
 """
-End-to-end ingest: walk a repo, chunk every .py file, embed each chunk,
-and store everything in Postgres.
+End-to-end ingest: walk a repo, chunk every .py and Markdown file, embed
+each chunk, and store everything in Postgres -- plus a generated overview
+chunk listing every file (see chunker.build_overview_chunks).
 
 Incremental: each file's content hash is stored in `ingested_files`, and a
 re-ingest only chunks + embeds files that are new or whose hash changed,
@@ -20,7 +21,7 @@ from sqlalchemy import text
 
 from app.core.embeddings import embed_texts
 from app.core.store import ensure_ingest_schema, get_engine
-from app.ingest.chunker import chunk_python_file, iter_python_files
+from app.ingest.chunker import OVERVIEW_PATH, build_overview_chunks, chunk_file, iter_source_files
 from app.ingest.github import cloned_repo, parse_github_url
 
 # Part of every file hash. Bump this whenever chunking or embedding changes
@@ -83,7 +84,7 @@ def ingest_repo(repo_root: Path, repo_name: str, full: bool = False) -> IngestSt
     ensure_ingest_schema()
     engine = get_engine()
 
-    files = {str(p.relative_to(repo_root)): p for p in iter_python_files(repo_root)}
+    files = {str(p.relative_to(repo_root)): p for p in iter_source_files(repo_root)}
     current = {rel: file_hash(p) for rel, p in files.items()}
 
     with engine.connect() as conn:
@@ -98,12 +99,20 @@ def ingest_repo(repo_root: Path, repo_name: str, full: bool = False) -> IngestSt
     if full:
         stored = {}
 
-    plan = plan_changes(current, stored, chunk_paths)
-    print(f"{len(files)} .py files: {len(plan.added)} added, {len(plan.modified)} modified, "
+    # The overview isn't a file on disk, so keep it out of the file diff
+    # (it would otherwise always look "removed").
+    has_overview = OVERVIEW_PATH in chunk_paths
+    plan = plan_changes(current, stored, chunk_paths - {OVERVIEW_PATH})
+    print(f"{len(files)} source files: {len(plan.added)} added, {len(plan.modified)} modified, "
           f"{len(plan.removed)} removed, {len(plan.unchanged)} unchanged")
 
     chunks = [c for rel in plan.to_reindex
-              for c in chunk_python_file(files[rel], repo_root, repo_name)]
+              for c in chunk_file(files[rel], repo_root, repo_name)]
+
+    # The overview describes every file, so any change invalidates it.
+    rebuild_overview = bool(full or plan.to_reindex or plan.removed or not has_overview)
+    if rebuild_overview and files:
+        chunks += build_overview_chunks(repo_root, repo_name, list(files.values()))
     if chunks:
         # Embed in one batch call -- much faster than one call per chunk.
         print(f"Embedding {len(chunks)} chunks (this may take a moment)...")
@@ -111,7 +120,7 @@ def ingest_repo(repo_root: Path, repo_name: str, full: bool = False) -> IngestSt
     else:
         vectors = []
 
-    stale = plan.to_reindex + plan.removed
+    stale = plan.to_reindex + plan.removed + ([OVERVIEW_PATH] if rebuild_overview else [])
     with engine.begin() as conn:
         # One transaction: a failure mid-ingest leaves the previous state intact.
         if stale:
@@ -163,6 +172,17 @@ def ingest_repo(repo_root: Path, repo_name: str, full: bool = False) -> IngestSt
         chunks_inserted=len(chunks),
         chunks_total=total,
     )
+
+
+def delete_repo(repo_name: str) -> int:
+    """Remove every chunk and file record for a repo. Returns chunks deleted."""
+    ensure_ingest_schema()
+    with get_engine().begin() as conn:
+        deleted = conn.execute(
+            text("DELETE FROM code_chunks WHERE repo = :repo"), {"repo": repo_name}
+        ).rowcount
+        conn.execute(text("DELETE FROM ingested_files WHERE repo = :repo"), {"repo": repo_name})
+    return deleted
 
 
 def ingest_github(url: str, repo_name: str | None = None, ref: str | None = None,

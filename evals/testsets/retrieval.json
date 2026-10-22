@@ -1,4 +1,6 @@
 [
+  {"repo": "coderag", "question": "What does coderag do?",
+   "expected": ["README.md::CodeRAG — Code Repository Q&A Assistant", "<overview>::<overview>"]},
   {"repo": "coderag", "question": "What does the AST chunker do?",
    "expected": ["app/ingest/chunker.py::chunk_python_file", "app/ingest/chunker.py::chunk_repo"]},
   {"repo": "coderag", "question": "How are classes split into chunks?",
@@ -65,5 +67,7 @@
   {"repo": "pallets/itsdangerous", "question": "What error is raised when the payload can't be deserialized?",
    "expected": ["src/itsdangerous/exc.py::BadPayload"]},
   {"repo": "pallets/itsdangerous", "question": "How is the max_age expiry of timestamp signatures tested?",
-   "expected": ["tests/test_itsdangerous/test_timed.py::TestTimestampSigner.test_max_age", "tests/test_itsdangerous/test_timed.py::TestTimedSerializer.test_max_age"]}
+   "expected": ["tests/test_itsdangerous/test_timed.py::TestTimestampSigner.test_max_age", "tests/test_itsdangerous/test_timed.py::TestTimedSerializer.test_max_age"]},
+  {"repo": "pallets/itsdangerous", "question": "What is itsdangerous used for?",
+   "expected": ["README.md::ItsDangerous", "<overview>::<overview>"]}
 ]

@@ -17,12 +17,17 @@
 
     <section class="panel">
       <label for="repo">Repository</label>
-      <select id="repo">
-        <option value="">All repos</option>
-        {% for r in repos %}
-          <option value="{{ r.repo }}">{{ r.repo }} ({{ r.files }} files)</option>
-        {% endfor %}
-      </select>
+      <div class="repo-row">
+        <select id="repo">
+          <option value="">All repos</option>
+          {% for r in repos %}
+            <option value="{{ r.repo }}">{{ r.repo }} ({{ r.files }} files)</option>
+          {% endfor %}
+        </select>
+        <button type="button" id="delete-btn" class="danger" disabled
+                title="Remove this repo from the index">Delete</button>
+      </div>
+      <p id="repo-status" class="status" role="status"></p>
 
       <label for="top-k">Chunks per answer: <output id="top-k-value">5</output></label>
       <input id="top-k" type="range" min="3" max="10" value="5">

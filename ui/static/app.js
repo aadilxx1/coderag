@@ -143,7 +143,42 @@ async function refreshRepos(selected) {
     repoSelect.appendChild(opt);
   }
   if (selected) repoSelect.value = selected;
+  updateDeleteButton();
 }
+
+// ---- delete ----
+
+const deleteBtn = $("delete-btn");
+const repoStatus = $("repo-status");
+
+function updateDeleteButton() {
+  deleteBtn.disabled = !repoSelect.value;  // can't delete "All repos"
+}
+repoSelect.addEventListener("change", () => {
+  updateDeleteButton();
+  repoStatus.textContent = "";
+});
+updateDeleteButton();
+
+deleteBtn.addEventListener("click", async () => {
+  const repo = repoSelect.value;
+  if (!repo || !confirm(`Remove "${repo}" from the index? You can re-ingest it later.`)) return;
+
+  deleteBtn.disabled = true;
+  repoStatus.className = "status";
+  try {
+    const resp = await fetch(`/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}`,
+                             { method: "DELETE" });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || `Delete failed (HTTP ${resp.status})`);
+    repoStatus.textContent = `Removed ${data.repo} (${data.chunks_deleted} chunks).`;
+    await refreshRepos("");
+  } catch (err) {
+    repoStatus.className = "status error";
+    repoStatus.textContent = err.message;
+    updateDeleteButton();
+  }
+});
 
 ingestForm.addEventListener("submit", async (e) => {
   e.preventDefault();

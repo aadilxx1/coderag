@@ -192,6 +192,35 @@ questions were added first, so down-ranking tests can't silently break them):
   lock, and non-finite embeddings are recomputed on CPU (then the model is
   moved back -- `encode(device="cpu")` otherwise leaves it on CPU for good)
 
+### Step 16: Project-level questions (docs + overview) ✅
+"What does coderag do?" couldn't be answered: only `.py` files were indexed,
+and no single function describes the project.
+- **Markdown docs indexed**: `README.md`, `docs/*.md`, etc. are chunked one
+  per heading section; the symbol is the heading path
+  (`Title > Setup > Docker`), headings inside code fences are ignored, long
+  sections are split into parts
+- **Repo overview chunk**: a generated `<overview>` per repo listing every file
+  with its module docstring / document title -- answers "what is this repo"
+  even without a README. Rebuilt whenever any file changes
+- **Doc cap** (`DOC_CAP = 2` in `retrieve.py`): docs restate code in plain
+  English and, uncapped, crowded code out of the candidates (coderag MRR
+  0.721 -> 0.619 -- its README is a detailed build log). At most 2 doc/overview
+  chunks keep their rank; the rest go below all code. Swept 0-3 with two new
+  project-level questions in the testset (35 total):
+
+| doc cap | MRR | hit@5 | project-level questions found |
+|---|---|---|---|
+| 0 (docs never surface) | 0.623 | 0.86 | 0 / 2 |
+| 1 | 0.639 | 0.89 | 1 / 2 |
+| **2** | **0.651** | **0.89** | **2 / 2** |
+| 3 | 0.636 | 0.86 | 2 / 2 |
+
+- Hidden directories (`.github`, `.pytest_cache`, `.tox`, ...) are now skipped
+  -- `.pytest_cache` ships its own `README.md`
+- **Delete a repo**: `DELETE /repos/{repo}` and a Delete button in the UI
+  (removed a duplicate `aadilxx1/coderag` that doubled every result under
+  "All repos")
+
 **Running it** (Postgres via `docker compose up -d`, plus `ollama serve`):
 ```
 ./.venv/bin/uvicorn app.api.main:app --port 8000   # API

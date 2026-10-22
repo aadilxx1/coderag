@@ -13,8 +13,9 @@ from sqlalchemy import text
 
 from app.core.store import get_engine
 from app.graph.pipeline import rag_graph
+from app.ingest.chunker import OVERVIEW_PATH
 from app.ingest.github import GitHubCloneError
-from app.ingest.pipeline import ingest_github
+from app.ingest.pipeline import delete_repo, ingest_github
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +96,21 @@ def ask(request: AskRequest) -> AskResponse:
 def list_repos() -> list[RepoInfo]:
     with get_engine().connect() as conn:
         rows = conn.execute(text("""
-            SELECT repo, count(DISTINCT file_path) AS files, count(*) AS chunks
+            SELECT repo,
+                   count(DISTINCT file_path) FILTER (WHERE file_path <> :overview) AS files,
+                   count(*) AS chunks
             FROM code_chunks GROUP BY repo ORDER BY repo
-        """)).fetchall()
+        """), {"overview": OVERVIEW_PATH}).fetchall()
     return [RepoInfo(repo=r.repo, files=r.files, chunks=r.chunks) for r in rows]
+
+
+# {repo:path} because repo names contain a slash ("pallets/itsdangerous").
+@app.delete("/repos/{repo:path}")
+def remove_repo(repo: str) -> dict:
+    deleted = delete_repo(repo)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"No repo named {repo!r} is ingested.")
+    return {"repo": repo, "chunks_deleted": deleted}
 
 
 # Synchronous: clone + embed can take a while on a big repo, but a plain

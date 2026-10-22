@@ -12,6 +12,7 @@ Then open http://127.0.0.1:5050
 from __future__ import annotations
 
 import os
+from urllib.parse import quote
 
 import httpx
 from flask import Flask, jsonify, render_template, request
@@ -54,6 +55,11 @@ def index():
 @app.get("/api/repos")
 def repos():
     return _forward("GET", "/repos", timeout=10)
+
+
+@app.delete("/api/repos/<path:repo>")
+def delete_repo(repo: str):
+    return _forward("DELETE", f"/repos/{quote(repo, safe='/')}", timeout=30)
 
 
 @app.post("/api/ask")
