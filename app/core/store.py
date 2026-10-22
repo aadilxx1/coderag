@@ -36,6 +36,21 @@ CREATE TABLE code_chunks (
 );
 
 CREATE INDEX code_chunks_search_idx ON code_chunks USING GIN (search_vector);
+
+DROP TABLE IF EXISTS ingested_files;
+"""
+
+# One row per source file seen at ingest, including files that produced no
+# chunks (e.g. an empty __init__.py), so incremental ingest can skip files
+# whose content hash hasn't changed. Non-destructive, so it's safe to run on
+# every ingest -- unlike SCHEMA, which drops everything.
+INGESTED_FILES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingested_files (
+    repo          TEXT NOT NULL,
+    file_path     TEXT NOT NULL,
+    content_hash  TEXT NOT NULL,
+    PRIMARY KEY (repo, file_path)
+);
 """
 
 
@@ -44,5 +59,12 @@ def get_engine():
 
 
 def init_schema() -> None:
+    """Drop and recreate all tables -- wipes every ingested repo."""
     with get_engine().begin() as conn:
         conn.execute(text(SCHEMA))
+        conn.execute(text(INGESTED_FILES_SCHEMA))
+
+
+def ensure_ingest_schema() -> None:
+    with get_engine().begin() as conn:
+        conn.execute(text(INGESTED_FILES_SCHEMA))

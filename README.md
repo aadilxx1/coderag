@@ -27,9 +27,8 @@ guardrails, and CI.
   column and a generated `tsvector` column (`'simple'` config, no stemming —
   code identifiers aren't natural language) with a GIN index for keyword search
 - `scripts/ingest.py` chunks a repo, embeds every chunk, and stores it —
-  re-ingesting a repo replaces its rows entirely (delete-then-insert per
-  `repo`), so re-running it always reflects the repo's current state with
-  no duplicate rows
+  re-running it always reflects the repo's current state with no duplicate
+  rows (incremental since Step 14: only changed files are re-embedded)
 
 ### Step 3: Embeddings ✅
 - Local embeddings via `sentence-transformers`, no API key (`app/core/embeddings.py`)
@@ -152,6 +151,22 @@ questions were added first, so down-ranking tests can't silently break them):
   `MODEL_NAME` in `rerank.py` to the Apache-2.0 MiniLM model for commercial use
 - `evals/run_retrieval_eval.py` now reranks by default; `--no-rerank` scores
   hybrid search alone
+
+### Step 14: Incremental re-ingest ✅
+- A new `ingested_files` table stores a SHA-256 of each file's content; a
+  re-ingest only chunks + embeds files that are new or changed, deletes rows
+  for files that are gone, and skips the rest. Content hashes (not mtimes)
+  mean it also works for GitHub repos, which are freshly cloned each time
+- `INDEX_VERSION` in `app/ingest/pipeline.py` is part of every hash -- bump it
+  when chunking or embedding changes, so old chunks don't silently mix with new
+- `--full` (CLI) / `"full": true` (`POST /repos`) re-embeds everything;
+  `POST /repos` now returns per-file counts (added / modified / removed /
+  unchanged) and chunks inserted / total
+- All deletes and inserts for one ingest run in a single transaction, so a
+  failure mid-ingest leaves the previous index intact
+- Verified: an unchanged re-ingest embeds 0 chunks (coderag: ~6s, mostly
+  model load); editing / deleting / adding one file each re-embeds only those;
+  itsdangerous retrieval scores are identical to a full rebuild
 
 ### Environment
 - Project dependencies are isolated in `.venv/` (pinned in `requirements.txt`)

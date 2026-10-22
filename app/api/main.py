@@ -3,6 +3,8 @@ FastAPI wrapper exposing the retrieve -> generate LangGraph pipeline over HTTP.
 """
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -32,11 +34,17 @@ class IngestRequest(BaseModel):
     url: str                  # https://github.com/owner/repo
     name: str | None = None   # defaults to "owner/repo"
     ref: str | None = None    # branch or tag; defaults to the repo's default branch
+    full: bool = False        # re-embed every file, not just new/changed ones
 
 
 class IngestResponse(BaseModel):
     repo: str
-    chunks: int
+    files_added: int
+    files_modified: int
+    files_removed: int
+    files_unchanged: int
+    chunks_inserted: int
+    chunks_total: int
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -50,9 +58,9 @@ def ask(request: AskRequest) -> AskResponse:
 @app.post("/repos", response_model=IngestResponse)
 def ingest(request: IngestRequest) -> IngestResponse:
     try:
-        repo, chunks = ingest_github(request.url, request.name, request.ref)
+        repo, stats = ingest_github(request.url, request.name, request.ref, full=request.full)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except GitHubCloneError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return IngestResponse(repo=repo, chunks=chunks)
+    return IngestResponse(repo=repo, **asdict(stats))

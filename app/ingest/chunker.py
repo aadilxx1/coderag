@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Iterator
 
 
 @dataclass
@@ -165,13 +166,19 @@ def chunk_python_file(path: Path, repo_root: Path, repo: str,
     return chunks
 
 
-def chunk_repo(repo_root: Path, repo: str, max_chars: int = 4000) -> list[CodeChunk]:
-    skip = {".git", ".venv", "venv", "node_modules", "__pycache__", "build", "dist"}
-    out: list[CodeChunk] = []
-    for path in repo_root.rglob("*.py"):
+SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", "build", "dist"}
+
+
+def iter_python_files(repo_root: Path) -> Iterator[Path]:
+    for path in sorted(repo_root.rglob("*.py")):
         # Check parts relative to the root, not the absolute path -- otherwise
         # a repo that itself lives under e.g. a "build/" dir is skipped entirely.
-        if any(part in skip for part in path.relative_to(repo_root).parts):
-            continue
+        if not any(part in SKIP_DIRS for part in path.relative_to(repo_root).parts):
+            yield path
+
+
+def chunk_repo(repo_root: Path, repo: str, max_chars: int = 4000) -> list[CodeChunk]:
+    out: list[CodeChunk] = []
+    for path in iter_python_files(repo_root):
         out.extend(chunk_python_file(path, repo_root, repo, max_chars))
     return out

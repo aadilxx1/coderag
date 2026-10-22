@@ -28,7 +28,7 @@
   {"repo": "coderag", "question": "How is a GitHub repo cloned?",
    "expected": ["app/ingest/github.py::cloned_repo"]},
   {"repo": "coderag", "question": "What happens to existing rows when a repo is re-ingested?",
-   "expected": ["app/ingest/pipeline.py::ingest_repo"]},
+   "expected": ["app/ingest/pipeline.py::ingest_repo", "app/ingest/pipeline.py::plan_changes"]},
   {"repo": "coderag", "question": "How does the eval rate answer relevancy?",
    "expected": ["evals/run_eval.py::judge_relevancy"]},
   {"repo": "coderag", "question": "Which test checks that a file with a syntax error doesn't crash ingest?",
