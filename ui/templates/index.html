@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CodeRAG</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css"
+        media="(prefers-color-scheme: light)">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+        media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <h1 class="logo">CodeRAG</h1>
+    <p class="tagline">Ask questions about a codebase</p>
+
+    <section class="panel">
+      <label for="repo">Repository</label>
+      <select id="repo">
+        <option value="">All repos</option>
+        {% for r in repos %}
+          <option value="{{ r.repo }}">{{ r.repo }} ({{ r.files }} files)</option>
+        {% endfor %}
+      </select>
+
+      <label for="top-k">Chunks per answer: <output id="top-k-value">5</output></label>
+      <input id="top-k" type="range" min="3" max="10" value="5">
+    </section>
+
+    <section class="panel">
+      <h2>Add a GitHub repo</h2>
+      <form id="ingest-form">
+        <label for="ingest-url">Repo URL</label>
+        <input id="ingest-url" type="url" required placeholder="https://github.com/owner/repo">
+        <label for="ingest-ref">Branch or tag <span class="muted">(optional)</span></label>
+        <input id="ingest-ref" type="text" placeholder="default branch">
+        <label class="checkbox">
+          <input id="ingest-full" type="checkbox"> Full rebuild
+        </label>
+        <button type="submit" id="ingest-btn">Ingest</button>
+      </form>
+      <p id="ingest-status" class="status" role="status"></p>
+    </section>
+  </aside>
+
+  <main class="main">
+    {% if api_error %}
+      <div class="banner error">{{ api_error }}</div>
+    {% endif %}
+
+    <div id="messages" class="messages">
+      <div class="empty" id="empty-state">
+        <p>Pick a repository and ask something like</p>
+        <p class="example">"How does the signer verify a signature?"</p>
+      </div>
+    </div>
+
+    <form id="ask-form" class="ask-bar">
+      <textarea id="question" rows="1" required
+                placeholder="Ask about the code... (Enter to send, Shift+Enter for a new line)"></textarea>
+      <button type="submit" id="ask-btn">Ask</button>
+    </form>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

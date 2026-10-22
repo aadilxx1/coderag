@@ -14,9 +14,11 @@ from app.core.retrieve import RetrievedChunk
 MAX_QUESTION_LENGTH = 2000
 
 _INJECTION_PATTERNS = [
-    re.compile(r"ignore (all|any|previous|prior) instructions", re.IGNORECASE),
+    # Any run of qualifiers: "ignore all previous instructions", "ignore the above instructions".
+    re.compile(r"ignore\s+(?:(?:all|any|the|your|previous|prior|above|earlier)\s+)*instructions",
+               re.IGNORECASE),
     re.compile(r"disregard (the|your|all) (system|previous) prompt", re.IGNORECASE),
-    re.compile(r"reveal (your|the) (system prompt|instructions)", re.IGNORECASE),
+    re.compile(r"(reveal|print|show|repeat) (your|the) (system prompt|instructions)", re.IGNORECASE),
     re.compile(r"you are now (a|an|no longer)", re.IGNORECASE),
     re.compile(r"pretend (to be|you are)", re.IGNORECASE),
 ]

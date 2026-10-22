@@ -3,14 +3,20 @@ FastAPI wrapper exposing the retrieve -> generate LangGraph pipeline over HTTP.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import text
 
+from app.core.store import get_engine
 from app.graph.pipeline import rag_graph
 from app.ingest.github import GitHubCloneError
 from app.ingest.pipeline import ingest_github
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="CodeRAG")
 
@@ -21,8 +27,28 @@ class AskRequest(BaseModel):
     top_k: int = 5
 
 
+class Source(BaseModel):
+    file_path: str
+    symbol: str
+    kind: str
+    start_line: int
+    end_line: int
+    code: str
+
+
 class AskResponse(BaseModel):
     answer: str
+    blocked: bool = False
+    block_reason: str | None = None
+    # The chunks the answer was generated from, so a client can show them.
+    # Empty if the question was blocked before retrieval.
+    sources: list[Source] = []
+
+
+class RepoInfo(BaseModel):
+    repo: str
+    files: int
+    chunks: int
 
 
 @app.get("/health")
@@ -49,8 +75,30 @@ class IngestResponse(BaseModel):
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest) -> AskResponse:
-    result = rag_graph.invoke(request.model_dump())
-    return AskResponse(answer=result["answer"])
+    try:
+        result = rag_graph.invoke(request.model_dump())
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Can't reach the LLM -- is `ollama serve` running?")
+    return AskResponse(
+        answer=result["answer"],
+        blocked=result.get("blocked", False),
+        block_reason=result.get("block_reason"),
+        sources=[
+            Source(file_path=c.file_path, symbol=c.symbol, kind=c.kind,
+                   start_line=c.start_line, end_line=c.end_line, code=c.code)
+            for c in result.get("chunks", [])
+        ],
+    )
+
+
+@app.get("/repos", response_model=list[RepoInfo])
+def list_repos() -> list[RepoInfo]:
+    with get_engine().connect() as conn:
+        rows = conn.execute(text("""
+            SELECT repo, count(DISTINCT file_path) AS files, count(*) AS chunks
+            FROM code_chunks GROUP BY repo ORDER BY repo
+        """)).fetchall()
+    return [RepoInfo(repo=r.repo, files=r.files, chunks=r.chunks) for r in rows]
 
 
 # Synchronous: clone + embed can take a while on a big repo, but a plain
@@ -63,4 +111,11 @@ def ingest(request: IngestRequest) -> IngestResponse:
         raise HTTPException(status_code=422, detail=str(e))
     except GitHubCloneError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # Anything else is a server-side failure. The full exception can be
+        # huge (a DB error echoes every bound row), so log it and return a
+        # short message instead of a bare "Internal Server Error".
+        logger.exception("Ingest of %s failed", request.url)
+        raise HTTPException(status_code=500,
+                            detail=f"Ingest failed ({type(e).__name__}) -- see the API server log.")
     return IngestResponse(repo=repo, **asdict(stats))

@@ -168,6 +168,36 @@ questions were added first, so down-ranking tests can't silently break them):
   model load); editing / deleting / adding one file each re-embeds only those;
   itsdangerous retrieval scores are identical to a full rebuild
 
+### Step 15: Web UI (Flask) ✅
+- `ui/app.py` -- a Flask app that renders the page (Jinja) and forwards the
+  browser's requests to the FastAPI service, so the browser only talks to
+  Flask and all RAG logic stays in the API
+- Sidebar: repo picker, chunks-per-answer slider, and an "Add a GitHub repo"
+  form (URL, optional branch/tag, full-rebuild checkbox) showing ingest stats
+- Chat area: answers rendered as markdown, each with expandable source cards
+  (`file:start-end`, symbol, highlighted code); guardrail blocks and errors
+  (API down, Ollama down) shown inline
+- API changes to support it: `GET /repos` (repos with file/chunk counts),
+  `/ask` now returns `sources`, `blocked` and `block_reason`, and returns
+  503 with a clear message when Ollama isn't running
+- LLM answers and ingested code are untrusted: answer markdown is sanitized
+  with DOMPurify, source code is only inserted as text
+- Fixed an input-guard gap found while testing the UI: "ignore **all previous**
+  instructions" (more than one qualifier) and "print your system prompt"
+  weren't caught; added `tests/test_guards.py`
+- Fixed an intermittent ingest failure seen via the UI: the embedding model
+  returned NaN vectors on the Apple GPU (MPS), which Postgres rejects. Not
+  reproducible since; likely causes are concurrent model use from FastAPI's
+  threadpool or GPU memory shared with Ollama. Now all model calls hold one
+  lock, and non-finite embeddings are recomputed on CPU (then the model is
+  moved back -- `encode(device="cpu")` otherwise leaves it on CPU for good)
+
+**Running it** (Postgres via `docker compose up -d`, plus `ollama serve`):
+```
+./.venv/bin/uvicorn app.api.main:app --port 8000   # API
+./.venv/bin/python ui/app.py                       # UI -> http://127.0.0.1:5050
+```
+
 ### Environment
 - Project dependencies are isolated in `.venv/` (pinned in `requirements.txt`)
   rather than the system/Anaconda Python — run scripts via `./.venv/bin/python`

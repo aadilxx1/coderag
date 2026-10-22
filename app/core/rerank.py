@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from sentence_transformers import CrossEncoder
 
+from app.core.embeddings import MODEL_LOCK
 from app.core.retrieve import RetrievedChunk
 
 MODEL_NAME = "jinaai/jina-reranker-v2-base-multilingual"
@@ -48,6 +49,7 @@ def _pair_text(chunk: RetrievedChunk) -> str:
 def rerank(query: str, chunks: list[RetrievedChunk], top_k: int) -> list[RetrievedChunk]:
     if not chunks:
         return []
-    scores = _get_model().predict([(query, _pair_text(c)) for c in chunks], batch_size=BATCH_SIZE)
+    with MODEL_LOCK:  # see embeddings.py: MPS isn't thread-safe
+        scores = _get_model().predict([(query, _pair_text(c)) for c in chunks], batch_size=BATCH_SIZE)
     order = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)
     return [chunks[i] for i in order[:top_k]]
