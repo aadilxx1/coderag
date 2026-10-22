@@ -12,7 +12,12 @@ Expected chunks are written as "file_path::symbol". Before scoring, every
 one is checked against the database: a typo or a stale index would
 otherwise just look like a retrieval miss.
 
-Run: ./.venv/bin/python evals/run_retrieval_eval.py
+By default this scores retrieval the way the pipeline does it: the top
+RERANK_CANDIDATES from hybrid search, reordered by the cross-encoder.
+--no-rerank scores hybrid search alone. (With reranking, hit@10 can't
+differ from --no-rerank: the reranker only reorders those 10 candidates.)
+
+Run: ./.venv/bin/python evals/run_retrieval_eval.py [--no-rerank]
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import text
 
+from app.core.rerank import RERANK_CANDIDATES, rerank
 from app.core.retrieve import retrieve
 from app.core.store import get_engine
 
@@ -73,7 +79,7 @@ def _fmt(summary: dict) -> str:
     return f"{hits}  MRR={summary['mrr']:.3f}  (n={summary['n']})"
 
 
-def run() -> dict:
+def run(use_rerank: bool = True) -> dict:
     items = json.loads(TESTSET_PATH.read_text())
 
     missing = check_expected_exist(items)
@@ -85,7 +91,9 @@ def run() -> dict:
 
     results = []
     for item in items:
-        chunks = retrieve(item["question"], repo=item["repo"], top_k=MAX_K)
+        chunks = retrieve(item["question"], repo=item["repo"], top_k=max(MAX_K, RERANK_CANDIDATES))
+        if use_rerank:
+            chunks = rerank(item["question"], chunks, top_k=MAX_K)
         retrieved = [_key(c.file_path, c.symbol) for c in chunks]
         rank = first_hit_rank(retrieved, item["expected"])
 
@@ -108,7 +116,7 @@ def run() -> dict:
         print(f"{repo:>22}: {_fmt(summary)}")
     print(f"{'overall':>22}: {_fmt(overall)}")
 
-    report = {"overall": overall, "per_repo": per_repo, "results": results}
+    report = {"rerank": use_rerank, "overall": overall, "per_repo": per_repo, "results": results}
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(json.dumps(report, indent=2))
     print(f"\nWrote report to {REPORT_PATH}")
@@ -116,4 +124,4 @@ def run() -> dict:
 
 
 if __name__ == "__main__":
-    run()
+    run(use_rerank="--no-rerank" not in sys.argv[1:])

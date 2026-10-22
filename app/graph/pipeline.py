@@ -1,5 +1,5 @@
 """
-LangGraph wiring of the retrieve -> generate flow.
+LangGraph wiring of the retrieve -> rerank -> generate flow.
 
 Each step is a named node operating on a shared state object, so later
 steps (guardrails, tracing hooks, reranking) can be inserted without
@@ -13,6 +13,7 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 
 from app.core.generate import MODEL_NAME, SYSTEM_PROMPT, build_context
+from app.core.rerank import RERANK_CANDIDATES, rerank
 from app.core.retrieve import RetrievedChunk, retrieve
 from app.guards.checks import check_groundedness, check_input, check_output_toxicity
 
@@ -35,8 +36,14 @@ def input_guard_node(state: GraphState) -> dict:
 
 
 def retrieve_node(state: GraphState) -> dict:
-    chunks = retrieve(state["question"], repo=state.get("repo"), top_k=state.get("top_k", 5))
+    # Over-fetch so the reranker has candidates to reorder; it trims to top_k.
+    top_k = state.get("top_k", 5)
+    chunks = retrieve(state["question"], repo=state.get("repo"), top_k=max(top_k, RERANK_CANDIDATES))
     return {"chunks": chunks}
+
+
+def rerank_node(state: GraphState) -> dict:
+    return {"chunks": rerank(state["question"], state["chunks"], top_k=state.get("top_k", 5))}
 
 
 def generate_node(state: GraphState) -> dict:
@@ -71,6 +78,7 @@ def build_graph():
     graph = StateGraph(GraphState)
     graph.add_node("input_guard", input_guard_node)
     graph.add_node("retrieve", retrieve_node)
+    graph.add_node("rerank", rerank_node)
     graph.add_node("generate", generate_node)
     graph.add_node("output_guard", output_guard_node)
 
@@ -78,7 +86,8 @@ def build_graph():
     graph.add_conditional_edges(
         "input_guard", _route_after_input_guard, {"blocked": END, "retrieve": "retrieve"}
     )
-    graph.add_edge("retrieve", "generate")
+    graph.add_edge("retrieve", "rerank")
+    graph.add_edge("rerank", "generate")
     graph.add_edge("generate", "output_guard")
     graph.add_edge("output_guard", END)
     return graph.compile()

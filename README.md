@@ -51,7 +51,7 @@ guardrails, and CI.
 
 ### Step 6: LangGraph flow (retrieve → generate) ✅
 - `app/graph/pipeline.py` — the retrieve/generate flow as a `StateGraph`
-  with named nodes (`input_guard` → `retrieve` → `generate` → `output_guard`)
+  with named nodes (`input_guard` → `retrieve` → `rerank` → `generate` → `output_guard`)
   sharing one state object, instead of one function doing everything —
   makes it straightforward to insert further steps (reranking, tracing)
   without rewriting the flow
@@ -131,6 +131,27 @@ questions were added first, so down-ranking tests can't silently break them):
   0.4, and the test-intent questions kept their ranks at every value
 - hit@1 barely moved: the right chunk is now usually in the top 3 but behind
   a closely related one (class summary, sibling method) -- the reranker's job
+
+### Step 13: Cross-encoder reranking ✅
+- `app/core/rerank.py` + a `rerank` graph node: hybrid retrieval fetches 10
+  candidates, a cross-encoder scores each (question, chunk) pair together,
+  and the top `top_k` go to generation
+- Three local models compared on the retrieval eval (10 candidates):
+
+| | hit@1 | hit@3 | hit@5 | MRR | latency/query (M3) |
+|---|---|---|---|---|---|
+| no rerank | 0.33 | 0.76 | 0.85 | 0.554 | -- |
+| `cross-encoder/ms-marco-MiniLM-L6-v2` | 0.33 | 0.76 | 0.91 | 0.578 | ~0.2s |
+| `BAAI/bge-reranker-base` (20 candidates) | 0.36 | 0.79 | 0.85 | 0.565 | ~2.4s |
+| **`jinaai/jina-reranker-v2-base-multilingual`** | **0.55** | **0.79** | **0.91** | **0.688** | ~1s |
+
+- jina-reranker-v2 is trained partly on code search, which shows: itsdangerous
+  MRR 0.377 -> 0.638. 15 and 30 candidates scored the same as 10 at 2-3x the
+  latency
+- **License: jina-reranker-v2 is CC-BY-NC-4.0 (non-commercial only).** Swap
+  `MODEL_NAME` in `rerank.py` to the Apache-2.0 MiniLM model for commercial use
+- `evals/run_retrieval_eval.py` now reranks by default; `--no-rerank` scores
+  hybrid search alone
 
 ### Environment
 - Project dependencies are isolated in `.venv/` (pinned in `requirements.txt`)
